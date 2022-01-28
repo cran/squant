@@ -1,0 +1,14 @@
+citHeader("To cite squant in publications use:")
+
+citEntry(entry = "Article",
+  title        = "Subgroup Identification Based on Quantitative Objectives",
+  author       = personList(as.person("Yan Sun"),
+                   as.person("A.S. Hedayat")),
+  journal      = "submitted",
+  year         = "2022",
+
+  textVersion  =
+  paste("Yan Sun, A.S. Hedayat.",
+        "Subgroup Identification Based on Quantitative Objectives.",
+        "submitted.")
+)

@@ -1,0 +1,12 @@
+04404a0879e024343636106a0776def8 *DESCRIPTION
+4f215af77ed116ecd3c68919121d2d55 *NAMESPACE
+a3f63fd3c73d71209df3c74b39fcb219 *R/SQUANT.R
+c4aaf3753e515c063c636aeb52c33388 *R/SQUANT_general.R
+c0d579e58808ee5f25ba05d02fce6bae *R/SQUANT_pred.R
+26b800ac02ce3551bbf357bd2e1e3e10 *R/SQUANT_prog.R
+8f03cb629da34c15fae8610c8faf041a *inst/CITATION
+a934b93a2a4bc42ecc470180aa0e61ba *man/eval_squant.Rd
+8a4c6e05dd2f7e04a1603bf3ed553be3 *man/plot.eval_squant.Rd
+381f074fcea545b3a385063fce637028 *man/plot.squant.Rd
+4d01bf0e9fd9603ea4dc759dfc42b35c *man/predict.squant.Rd
+8c9d24e7fa5f2d0e514d5c2b160deda7 *man/squant.Rd
