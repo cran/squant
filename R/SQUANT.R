@@ -68,20 +68,23 @@
 #'     The performance of subgroup identification. In the predictive
 #'     case, the performance includes the interaction p value, the p value of the
 #'     trt difference in the selected positive group, the p value of the trt difference
-#'     in the unselected negative group, and the stats for each arm in each group. In the
-#'     prognostic case, the performance includes p value of group comparison and the
-#'     stats of each group.}
+#'     in the unselected negative group (all adjusted for prognostic markers if any) and
+#'     the stats for each arm in each group. In the prognostic case, the performance
+#'     includes p value of group comparison and the stats of each group.}
 #'   \item{d.sel}{Closely related to quant.Please see element: \code{interpretation}.}
 #'   \item{min.diff, threshold}{Please see \code{interpretation}.}
 #'   \item{xvars.top}{The ordered variable importance list.}
-#'   \item{FDR.min}{The minimum achieveable FDR threshold so that a signature
+#'   \item{FDR.min}{The minimum achievable FDR threshold so that a signature
 #'     can be derived. This is useful when a pre-specified \code{FDR} does not lead to
 #'     a signature, in which case the \code{FDR.min} can be used instead.}
+#'   \item{prog.adj}{Prognostic effect contributed by xvars.adj for each subject (predictive case only).}
+#'   \item{xvars.adj}{Important prognostic markers to adjust in the model (predictive case only).}
 #'   \item{interpretation1}{Interpretation of the result.}
 #'   \item{interpretation2}{Interpretation of the result.}
 #' @example example_squant/example.R
 #' @references Yan Sun, Samad Hedayat. Subgroup Identification based on Quantitative Objectives. (submitted)
 #' @import stats graphics utils survival glmnet ggplot2
+#' @importFrom methods is
 #' @export
 squant = function(yvar, censorvar=NULL, xvars, trtvar=NULL, trtcd=1, data, type="c", weight=NULL, dir="larger",
                   quant=NULL, xvars.keep=NULL, alpha=1, fold=5, n.cv = 50, FDR = 0.15, progress=TRUE){
@@ -186,11 +189,12 @@ predict.squant = function(object, data, ...){
 #' @param brief A logical value, TRUE or FALSE. When TRUE, only the most important p value
 #'   will be reported.
 #' @return An object of "eval_squant". A list containing the following elements.
-#'   \item{inter.pval}{Treatment*subgroup Interaction p value (predictive case only).}
+#'   \item{inter.pval}{Treatment*subgroup Interaction p value (predictive case only,
+#'     adjusted for prognostic markers if any).}
 #'   \item{pos.group.pval}{The p value of the trt difference in the selected positive
-#'     group (predictive case only).}
+#'     group (predictive case only, adjusted for prognostic markers if any).}
 #'   \item{neg.group.pval}{The p value of the trt difference in the negative group
-#'     (predictive case only).}
+#'     (predictive case only, adjusted for prognostic markers if any).}
 #'   \item{pval}{The p value of group comparison (prognostic case only).}
 #'   \item{group.stats}{The performance of each arm by group (predictive case) or
 #'     the performance of each group (prognostic case).}
@@ -206,7 +210,8 @@ eval_squant = function(yvar, censorvar, trtvar, trtcd=1, dir, type, data, squant
     performance = eval.squant.prog(yvar=yvar, censorvar=censorvar, dir=dir, type=type, data.pred=data.pred, brief=brief)
 
   }else if(is.character(trtvar) && length(trtvar)==1){
-    performance = eval.squant.pred(yvar=yvar, censorvar=censorvar, trtvar=trtvar, trtcd=trtcd, dir=dir, type=type, data.pred=data.pred, brief=brief)
+    performance = eval.squant.pred(yvar=yvar, censorvar=censorvar, trtvar=trtvar, trtcd=trtcd, dir=dir, type=type,
+                                   data.pred=data.pred, xvars.adj = squant.out$xvars.adj, brief=brief)
 
   }else{
     stop("trtvar should be either NULL or a character of length 1.")
@@ -225,7 +230,7 @@ print.eval_squant = function(x, ...){
   #x: an object of class "eval_squant" (a list)
   cat("Apply the derived signature to the specified data.", fill=TRUE)
   if("inter.pval" %in% names(x)){
-    cat(paste("Interaction p value:", x$inter.pval), fill=TRUE)
+    cat(paste("Interaction p value (adjusted for prognostic markers if any):", x$inter.pval), fill=TRUE)
   }else if("pval" %in% names(x)){
     cat(paste("Group comparison p value:", x$pval), fill=TRUE)
   }
@@ -255,9 +260,9 @@ plot.squant = function(x, trt.name="Trt", ctrl.name="Ctrl", ...){
 
   group.stats = x$performance$group.stats
   if(nrow(group.stats)==2){
-    fig = plot.squant.prog(group.stats=group.stats)
+    fig = plotsquant.prog(group.stats=group.stats)
   }else if(nrow(group.stats)==4){
-    fig = plot.squant.pred(group.stats=group.stats, trt.name=trt.name, ctrl.name=ctrl.name)
+    fig = plotsquant.pred(group.stats=group.stats, trt.name=trt.name, ctrl.name=ctrl.name)
   }else{
     stop("Wrong format of group.stats.")
   }
@@ -285,9 +290,9 @@ plot.eval_squant = function(x, trt.name="Trt", ctrl.name="Ctrl", ...){
 
   group.stats = x$group.stats
   if(nrow(group.stats)==2){
-    fig = plot.squant.prog(group.stats=group.stats)
+    fig = plotsquant.prog(group.stats=group.stats)
   }else if(nrow(group.stats)==4){
-    fig = plot.squant.pred(group.stats=group.stats, trt.name=trt.name, ctrl.name=ctrl.name)
+    fig = plotsquant.pred(group.stats=group.stats, trt.name=trt.name, ctrl.name=ctrl.name)
   }else{
     stop("Wrong format of group.stats.")
   }

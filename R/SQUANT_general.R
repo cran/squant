@@ -42,22 +42,29 @@ order.xvars = function(beta.sel.all, xvars, fold){
     xvars.weight[xvar.i] = mean(beta.sel.i)
   }
 
-  if(length(xvars.weight)>=2){
-    xvars.weight = sort(xvars.weight)
+  xvars.weight.all = xvars.weight
+
+  if(length(xvars.weight)>=3){
+    xvars.weight = sort(xvars.weight, decreasing = FALSE)
     xvars.weight.inc = xvars.weight[2:length(xvars.weight)]-xvars.weight[1:(length(xvars.weight)-1)]
     max.inc = max(xvars.weight.inc)
-    idx.inc.cut = which(xvars.weight.inc > max.inc/4)[1]+1
-    if(idx.inc.cut==2) idx.inc.cut=1
+    idx.inc.cut = which(xvars.weight.inc > max.inc/2)[1]+1
     xvars.weight = xvars.weight[idx.inc.cut:length(xvars.weight)]
   }
 
 
-  xvars.weight.cutoff = max(xvars.weight)/10
+  xvars.weight.cutoff = max(xvars.weight, na.rm=T)/2
   xvars.weight = xvars.weight[xvars.weight > xvars.weight.cutoff]
+
+  weight.ordered.all = sort(xvars.weight.all, decreasing = TRUE)
+  xvars.ordered.all = data.frame(xvars.ordered=names(weight.ordered.all), Importance=weight.ordered.all,
+                             stringsAsFactors = FALSE)
+
   weight.ordered = sort(xvars.weight, decreasing = TRUE)
   xvars.ordered = data.frame(xvars.ordered=names(weight.ordered), Importance=weight.ordered,
                              stringsAsFactors = FALSE)
-  xvars.ordered
+
+  list(xvars.ordered.all=xvars.ordered.all, xvars.ordered=xvars.ordered)
 
 }
 

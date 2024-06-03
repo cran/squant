@@ -61,11 +61,12 @@ will be reported.}
 }
 \value{
 An object of "eval_squant". A list containing the following elements.
-  \item{inter.pval}{Treatment*subgroup Interaction p value (predictive case only).}
+  \item{inter.pval}{Treatment*subgroup Interaction p value (predictive case only,
+    adjusted for prognostic markers if any).}
   \item{pos.group.pval}{The p value of the trt difference in the selected positive
-    group (predictive case only).}
+    group (predictive case only, adjusted for prognostic markers if any).}
   \item{neg.group.pval}{The p value of the trt difference in the negative group
-    (predictive case only).}
+    (predictive case only, adjusted for prognostic markers if any).}
   \item{pval}{The p value of group comparison (prognostic case only).}
   \item{group.stats}{The performance of each arm by group (predictive case) or
     the performance of each group (prognostic case).}

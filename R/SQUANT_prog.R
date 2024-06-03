@@ -22,6 +22,7 @@ prep.prog = function(yvar, censorvar, xvars, data, weight, dir){
 
   if(!is.null(weight) && !is.numeric(weight)) stop("weight needs to be a numeric vector or NULL")
   if(is.null(weight)) weight=1
+  if(any(weight <=0)) stop("weight cannot be <= 0")
 
   #missing data handling
   data=data[c(yvar,censorvar,xvars)]
@@ -56,14 +57,10 @@ wk.data.macro.prog = function(data, d, yvar){
   #d: threshold to qualify for sig+, E(Y|X,T=1)-E(Y|X,T=-1)>=2d
   #yvar: response variable name
 
-
   off.set = min(data[[yvar]]-data[["squant.trt"]]*d)
 
-  p1=round(mean(data[["squant.trt"]]==1),digits=3)
-  logit.weight.num=(data[[yvar]]-data[["squant.trt"]]*d-off.set)*data[["squant.weight"]]
-  logit.weight.den=data[["squant.trt"]]*p1+(1-data[["squant.trt"]])/2
-  logit.weight=logit.weight.num/logit.weight.den
-  logit.weight[logit.weight<=0] = min(logit.weight[logit.weight>0])/100000
+  logit.weight=(data[[yvar]]-data[["squant.trt"]]*d-off.set)*data[["squant.weight"]]
+  logit.weight[logit.weight<=0] = min(logit.weight[logit.weight>0])/10000
 
   data[["squant.logit.weight"]]=logit.weight
   data[["squant.y.psdo"]]=(data[["squant.trt"]]+1)/2
@@ -125,11 +122,11 @@ eval.squant.prog = function(yvar, censorvar, dir, type, data.pred, brief=FALSE){
   }else if(type=="s"){
     fml = as.formula(paste("Surv(",yvar,",",censorvar, ")~", "squant.subgroup" , sep=""))
     res.subgrp = try(summary(coxph(fml, data=data.pred))$coefficients["squant.subgroup",c("coef","Pr(>|z|)")], silent=TRUE)
-    if(class(res.subgrp)!="try-error") res.subgrp["coef"]=-res.subgrp["coef"]
+    if(!is(res.subgrp, "try-error")) res.subgrp["coef"]=-res.subgrp["coef"]
 
   }
 
-  if(class(res.subgrp)!= "try-error" && !is.na(res.subgrp[1])){
+  if(!is(res.subgrp, "try-error") && !is.na(res.subgrp[1])){
     if(dir=="larger" & res.subgrp[1]>=0){
       pval = res.subgrp[2]/2
     }else if(dir=="larger" & res.subgrp[1]<0){
@@ -222,7 +219,10 @@ cv.squant.prog = function(yvar, censorvar, xvars, d, data, type, dir, xvars.keep
   }
 
   data.wk = wk.data.prog(data=data, d=d, yvar=yvar)
-  x.std = data.matrix(scale(data.wk[xvars]))
+
+  x.sd = apply(data.wk[xvars], 2, sd, na.rm=T)
+  x.sd[x.sd==0] = 1
+  x.std = data.matrix(scale(data.wk[xvars], center = T, scale = x.sd))
   x.std = cbind(squant.pseudo.int=1, x.std)
   penalty.factor = rep(1, dim(x.std)[2])
   penalty.factor[colnames(x.std)%in%xvars.keep] = 0
@@ -235,8 +235,11 @@ cv.squant.prog = function(yvar, censorvar, xvars, d, data, type, dir, xvars.keep
     lambda.seq = c(0.2, 0.1, 0)
   }else if (any(is.na(lambda.seq))) {
     lambda.seq[is.na(lambda.seq)]=max(lambda.seq,na.rm = TRUE)+0.1
-    lambda.seq = sort(lambda.seq, decreasing = TRUE)
   }
+
+  lambda.seq = c(max(lambda.seq, na.rm = T)*1.1, lambda.seq, min(lambda.seq, na.rm = T)*0.9)
+  lambda.seq = sort(unique(lambda.seq), decreasing = TRUE)
+  lambda.seq = lambda.seq[1:min(25, length(lambda.seq))]
 
 
   N = dim(data)[1]
@@ -269,7 +272,10 @@ cv.squant.prog = function(yvar, censorvar, xvars, d, data, type, dir, xvars.keep
     idx.test.i = c(1:N)[cv.idx==i]
 
     data.wk.i = wk.data.prog(data=data[idx.train.i,], d=d, yvar=yvar)
-    x.std.i = data.matrix(scale(data.wk.i[xvars]))
+
+    x.sd.i = apply(data.wk.i[xvars], 2, sd, na.rm=T)
+    x.sd.i[x.sd.i==0] = 1
+    x.std.i = data.matrix(scale(data.wk.i[xvars], center = T, scale = x.sd.i))
     x.std.i = cbind(squant.pseudo.int=1, x.std.i)
 
     lasso.fit.i = glmnet(x=x.std.i, y=factor(data.wk.i[,"squant.y.psdo"]), family="binomial", weights=data.wk.i[,"squant.logit.weight"],
@@ -306,84 +312,11 @@ cv.squant.prog = function(yvar, censorvar, xvars, d, data, type, dir, xvars.keep
 
 
 
-####### cv for final fitting: an ordered vector of covariates and a specific d ########
-cv.fit.prog = function(yvar, censorvar, xvars.ordered, d, data, type, dir, fold=5){
-  #yvar: response variable name
-  #censorvar: event indicator variable name 0-censor 1-event
-  #xvars.ordered: ordered covariates variable names based on cv.squant variable selection result
-  #d: threshold to qualify for sig+, E(Y|X,T=1)-E(Y|X,T=-1)>=2d
-  #data: the data frame after prep function
-  #type: "c" = continuous, "b" = binary, "s" = survival
-  #dir:
-  #   "larger", prefer larger response, i.e., E(Y|X)-0>=2d
-  #   "smaller", prefer smaller response,  i.e.,  0-E(Y|X)>=2d
-  #fold: # of CV folds
-
-  if(dir=="larger") {
-    cd.org = 1
-  }else{
-    cd.org = -1
-  }
-
-  N = dim(data)[1]
-  cv.idx = rep(NA, N)
-
-  if(type!="b"){
-    n.org = sum(data[["squant.trt"]]==cd.org)
-    cv.idx.org = sample(rep(1:fold,ceiling(n.org/fold))[1:n.org])
-
-    cv.idx[data[["squant.trt"]]==cd.org] = cv.idx.org
-    cv.idx[data[["squant.trt"]]==-cd.org] = cv.idx.org
-
-  }else{
-    n.org.1 = sum(data[["squant.trt"]]==cd.org&data[[yvar]]==1)
-    n.org.0 = sum(data[["squant.trt"]]==cd.org&data[[yvar]]==0)
-    cv.idx.org.1 = sample(rep(1:fold,ceiling(n.org.1/fold))[1:n.org.1])
-    cv.idx.org.0 = sample(rep(1:fold,ceiling(n.org.0/fold))[1:n.org.0])
-    cv.idx[data[["squant.trt"]]==cd.org&data[[yvar]]==1] = cv.idx.org.1
-    cv.idx[data[["squant.trt"]]==cd.org&data[[yvar]]==0] = cv.idx.org.0
-    cv.idx[data[["squant.trt"]]==-cd.org] = cv.idx[data[["squant.trt"]]==cd.org]
-  }
-
-
-  data.pred = data
-  data.pred[,paste("squant.subgroup", 1:length(xvars.ordered),sep="")] = NA
-
-  for(i in 1:fold){
-    idx.train.i = c(1:N)[cv.idx!=i]
-    idx.test.i = c(1:N)[cv.idx==i]
-    data.wk.i = wk.data.prog(data=data[idx.train.i,], d=d, yvar=yvar)
-
-    for(j in 1:length(xvars.ordered)){
-      xvars.sel.ij = xvars.ordered[1:j]
-      squant.fit.ij = fit.squant(data.wk=data.wk.i, xvars.sel=xvars.sel.ij)
-      data.pred[idx.test.i, paste("squant.subgroup",j,sep="")] = predict_squant(squant.fit=squant.fit.ij,
-                                                                                data=data[idx.test.i,])$squant.subgroup
-    }
-  }
-
-
-  pval.all = rep(NA, length(xvars.ordered))
-  for(i in 1:length(pval.all)){
-    data.pred.i = data.pred[c(yvar,censorvar,"squant.trt",paste("squant.subgroup",i,sep=""))]
-    names(data.pred.i) = c(yvar,censorvar,"squant.trt","squant.subgroup")
-    data.pred.i = data.pred.i[data.pred.i[["squant.trt"]]==cd.org,]
-    pval.all[i] = eval.squant.prog(yvar=yvar, censorvar=censorvar, dir=dir, type=type,
-                                   data.pred=data.pred.i, brief=TRUE)$pval
-
-  }
-
-  n.xvars.sel = which.min(pval.all)
-  list(pval.all = pval.all, n.xvars.sel = n.xvars.sel, data.pred = data.pred)
-
-}
-
-
 
 
 
 ##### prognostic plot ######
-plot.squant.prog = function(group.stats){
+plotsquant.prog = function(group.stats){
   #group.stats: output of squant function: $performance$group.stats; Or output of eval.squant: $group.stats
 
   if(!is.data.frame(group.stats)) stop("group.stats needs to be a data frame.")
@@ -534,12 +467,14 @@ squant.prog = function(yvar, censorvar=NULL, xvars, data, type="c", weight=NULL,
     if(progress) pg_status(which(d.seq==d.i)/(n.cv+1), end=FALSE)
   }
 
+
+
   pval.adj = p.adjust(pval.all, method = "BH")
   pval.sel.idx = which(pval.adj <= FDR)
 
-  for(FDR.min.i in sort(unique(pval.adj))){
+  for(FDR.min.i in sort(unique(pval.adj),decreasing = FALSE)){
     idx.i = which(pval.adj <= FDR.min.i)
-    if(length(unique(d.all[idx.i]))>=n.cv*0.15){
+    if(length(unique(d.all[idx.i])) > n.cv*0.15){
       FDR.min = FDR.min.i
       break
     }
@@ -547,79 +482,80 @@ squant.prog = function(yvar, censorvar=NULL, xvars, data, type="c", weight=NULL,
 
 
 
-  if(length(pval.sel.idx)>0 && length(unique(d.all[pval.sel.idx]))>=n.cv*0.15){
+  if(length(pval.sel.idx)>0 && length(unique(d.all[pval.sel.idx])) > n.cv*0.15){
     pval.sel.all = pval.all[pval.sel.idx]
     d.sel.all = d.all[pval.sel.idx]
     beta.sel.all = beta.all[,pval.sel.idx, drop=FALSE]
     xvars.top = order.xvars(beta.sel.all=beta.sel.all, xvars=xvars, fold=fold)
-    xvars.ordered = unique(c(xvars.keep, xvars.top$xvars.ordered))
+    xvars.ordered = unique(c(xvars.keep, xvars.top$xvars.ordered$xvars.ordered))
 
     if(length(xvars.ordered)>0){
+
+      xvars.sel.final = xvars.ordered
+
       ##### select the best d #####
       if(is.null(threshold)){
-        d.sel = d.sel.all[which.min(pval.sel.all)]
+        res.d.sel = NULL
+
+        for(d.i in unique(d.sel.all)){
+          data.wk.i = wk.data.prog(data=data, d=d.i, yvar=yvar)
+          squant.fit.i = fit.squant(data.wk=data.wk.i, xvars.sel=xvars.sel.final)
+          data.pred.i = predict_squant(squant.fit=squant.fit.i, data=data.org)$data.pred
+          performance.i = eval.squant.prog(yvar=yvar, censorvar=censorvar, dir=dir, type=type,
+                                         data.pred=data.pred.i, brief=T)
+          res.d.sel = rbind(res.d.sel, data.frame(d.sel = d.i, pval = performance.i$pval))
+
+        }
+
+        d.sel = res.d.sel[which.min(res.d.sel$pval), "d.sel"]
+
+        if(length(d.sel)==0) d.sel = d.sel.all[which.min(pval.sel.all)]
+
       }else{
         d.sel = threshold/2
         if(dir=="smaller") d.sel = -1*d.sel
       }
 
-      ##### cv for final fit ##########
-      n.cv.final = 25
-      pval.all = matrix(NA, nrow=n.cv.final, ncol=length(xvars.ordered))
-      names.pred.subgroup = paste("squant.subgroup", 1:length(xvars.ordered),sep="")
-      pred.subgroup.all = matrix(NA, nrow=dim(data)[1]*n.cv.final, ncol=length(xvars.ordered))
-      colnames(pred.subgroup.all) = names.pred.subgroup
 
-      for(i in 1:n.cv.final){
-        cv.i = cv.fit.prog(yvar=yvar, censorvar=censorvar, xvars.ordered=xvars.ordered,
-                           d=d.sel, data=data, type=type, dir=dir, fold=fold)
-        pval.all[i,] = cv.i$pval.all
-        pred.subgroup.all[((i-1)*dim(data)[1]+1):(i*dim(data)[1]),] = data.matrix(cv.i$data.pred[, names.pred.subgroup, drop=FALSE])
 
-        if(progress) pg_status((n.cv+i/(n.cv.final+1))/(n.cv+1), end=FALSE)
 
+      #### final fit and performance evaluation ###
+      data.wk = wk.data.prog(data=data, d=d.sel, yvar=yvar)
+      squant.fit = fit.squant(data.wk=data.wk, xvars.sel=xvars.sel.final)
+      data.pred = predict_squant(squant.fit=squant.fit, data=data.org)$data.pred
+      performance = eval.squant.prog(yvar=yvar, censorvar=censorvar, dir=dir, type=type,
+                                     data.pred=data.pred, brief=FALSE)
+
+      #### put together the results ####
+      squant.fit.print = squant.fit
+      squant.fit.print$coef = signif(squant.fit.print$coef, 3)
+
+      interpretation1.1 = paste("Selected Positive Subgroup:",squant.fit.print$coef[squant.fit.print$variables=="(Intercept)"],"+")
+      interpretation1.2 = paste(squant.fit.print$coef[squant.fit.print$variables!="(Intercept)"],
+                                squant.fit.print$variables[squant.fit.print$variables!="(Intercept)"],collapse=" + ", sep="*")
+      interpretation1 = paste(interpretation1.1, interpretation1.2,"> 0")
+      interpretation1 = gsub(pattern="+ -", replacement="- ", x=interpretation1, fixed = TRUE)
+
+      if(dir=="larger"){
+        interpretation2 = "Subgroup Selection Objective: E(Y|X) >= threshold (i.e, 2*d.sel)"
+      }else{
+        interpretation2 = "Subgroup Selection Objective: E(Y|X) <= threshold (i.e, -2*d.sel)"
+      }
+
+      res.final = list(squant.fit = squant.fit, data.pred = data.pred, performance=performance, d.sel=d.sel,
+                       threshold=ifelse(dir=="larger",2*d.sel, -2*d.sel), xvars.top = xvars.top$xvars.ordered.all,
+                       FDR.min = FDR.min, interpretation1=interpretation1, interpretation2=interpretation2)
+
+      if(is.na(performance$pval)||performance$pval>FDR) {
+        res.final=list(squant.fit = NULL, data.pred = NULL, performance = NULL, d.sel=d.sel,
+                       threshold=ifelse(dir=="larger",2*d.sel, -2*d.sel), xvars.top = xvars.top$xvars.ordered.all,
+                       FDR.min = FDR.min,
+                       interpretation1="No significant subgroup can be identified!", interpretation2=NULL)
       }
 
 
-      median.pval.all = apply(pval.all, 2, median)
-      min.idx = which.min(median.pval.all)
 
-      if(length(min.idx)==1){
-        n.xvars.sel = min.idx
-        error.candidate = colMeans(abs(pred.subgroup.all[,1:min.idx,drop=FALSE]-pred.subgroup.all[,min.idx]))
-        xvars.sel.final = xvars.ordered[1:which(error.candidate < 0.05)[1]]
-        xvars.sel.final = unique(c(xvars.keep, xvars.sel.final))
 
-        #### final fit and performance evaluation ###
-        data.wk = wk.data.prog(data=data, d=d.sel, yvar=yvar)
-        squant.fit = fit.squant(data.wk=data.wk, xvars.sel=xvars.sel.final)
-        data.pred = predict_squant(squant.fit=squant.fit, data=data.org)$data.pred
-        performance = eval.squant.prog(yvar=yvar, censorvar=censorvar, dir=dir, type=type,
-                                  data.pred=data.pred, brief=FALSE)
-
-        #### put together the results ####
-        squant.fit.print = squant.fit
-        squant.fit.print$coef = signif(squant.fit.print$coef, 3)
-
-        interpretation1.1 = paste("Selected Positive Subgroup:",squant.fit.print$coef[squant.fit.print$variables=="(Intercept)"],"+")
-        interpretation1.2 = paste(squant.fit.print$coef[squant.fit.print$variables!="(Intercept)"],
-                                  squant.fit.print$variables[squant.fit.print$variables!="(Intercept)"],collapse=" + ", sep="*")
-        interpretation1 = paste(interpretation1.1, interpretation1.2,"> 0")
-        interpretation1 = gsub(pattern="+ -", replacement="- ", x=interpretation1, fixed = TRUE)
-
-        if(dir=="larger"){
-          interpretation2 = "Subgroup Selection Objective: E(Y|X) >= threshold (i.e, 2*d.sel)"
-        }else{
-          interpretation2 = "Subgroup Selection Objective: E(Y|X) <= threshold (i.e, -2*d.sel)"
-        }
-
-        res.final = list(squant.fit = squant.fit, data.pred = data.pred, performance=performance, d.sel=d.sel,
-                         threshold=ifelse(dir=="larger",2*d.sel, -2*d.sel), xvars.top = xvars.top, FDR.min = FDR.min,
-                         interpretation1=interpretation1, interpretation2=interpretation2)
-
-        if(is.na(performance$pval)||performance$pval>FDR) res.final=NULL
-
-      }
     }
   }
 

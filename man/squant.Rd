@@ -92,15 +92,17 @@ An object of "squant". A list containing the following elements.
     The performance of subgroup identification. In the predictive
     case, the performance includes the interaction p value, the p value of the
     trt difference in the selected positive group, the p value of the trt difference
-    in the unselected negative group, and the stats for each arm in each group. In the
-    prognostic case, the performance includes p value of group comparison and the
-    stats of each group.}
+    in the unselected negative group (all adjusted for prognostic markers if any) and
+    the stats for each arm in each group. In the prognostic case, the performance
+    includes p value of group comparison and the stats of each group.}
   \item{d.sel}{Closely related to quant.Please see element: \code{interpretation}.}
   \item{min.diff, threshold}{Please see \code{interpretation}.}
   \item{xvars.top}{The ordered variable importance list.}
-  \item{FDR.min}{The minimum achieveable FDR threshold so that a signature
+  \item{FDR.min}{The minimum achievable FDR threshold so that a signature
     can be derived. This is useful when a pre-specified \code{FDR} does not lead to
     a signature, in which case the \code{FDR.min} can be used instead.}
+  \item{prog.adj}{Prognostic effect contributed by xvars.adj for each subject (predictive case only).}
+  \item{xvars.adj}{Important prognostic markers to adjust in the model (predictive case only).}
   \item{interpretation1}{Interpretation of the result.}
   \item{interpretation2}{Interpretation of the result.}
 }
