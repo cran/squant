@@ -776,7 +776,7 @@ squant.pred = function(yvar, censorvar=NULL, xvars, trtvar, trtcd=1, data, type=
   if(!all(make.names(c(yvar, censorvar, xvars, trtvar), unique=TRUE)%in%c(yvar, censorvar, xvars, trtvar)))
     stop(paste("Some variable (column) names are not syntactically valid or duplicated. \n",
                "Consider using make.names() to change the names automatically.", sep=""))
-  if(!all(sapply(data[c(yvar,censorvar,trtvar,xvars)], function(x) is.numeric(x))))
+  if(!all(sapply(data[c(yvar,censorvar,xvars)], function(x) is.numeric(x))))
      stop("There are non-numeric columns.")
 
 
